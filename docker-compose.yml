@@ -1,0 +1,234 @@
+name: gisoo-trader
+
+# ---------------------------------------------------------------- shared bits
+
+# Log rotation for every container (json-file, 5 x 10 MB each).
+x-logging: &default-logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "5"}
+
+# Everything written in Python shares one image and differs only in `command`.
+x-engine-base: &engine-base
+  build:
+    context: ./trader/engine
+  image: gisoo-trader/engine:latest
+  env_file: [.env]
+  environment:
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-trader}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trader}
+    REDIS_URL: redis://redis:6379/0
+  restart: unless-stopped
+  # Give a worker time to finish an in-flight order (entry + protective stop)
+  # before Docker falls back to SIGKILL. Default would be 10 s.
+  stop_grace_period: 45s
+  security_opt: ["no-new-privileges:true"]
+  volumes:
+    - engine-state:/data
+  logging: *default-logging
+
+# Every long-running Python service waits for the database, the bus and the
+# one-shot schema migration. (YAML "<<:" does not deep-merge `depends_on`, so
+# this is a separate anchor that each service references explicitly.)
+x-worker-deps: &worker-deps
+  postgres: {condition: service_healthy}
+  redis: {condition: service_healthy}
+  migrate: {condition: service_completed_successfully}
+
+# Liveness check for the workers. Each of them writes a heartbeat into the
+# Redis hash `gtr:status` (field = component name, JSON payload with an ISO
+# "at" timestamp - see app/workers/bus.py::set_status) every 15-20 s.
+# Usage: python -c <this> <component> <max-age-seconds>. Exit 1 = stale/missing.
+# Docker only *reports* unhealthy (docker compose ps); it does not restart.
+x-heartbeat-check: &heartbeat-check |
+  import datetime as d, json, os, sys, redis
+  name, max_age = sys.argv[1], float(sys.argv[2])
+  try:
+      raw = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://redis:6379/0"),
+                                 socket_timeout=3, decode_responses=True).hget("gtr:status", name)
+  except Exception as exc:
+      print("redis unreachable:", exc); sys.exit(1)
+  if not raw:
+      print("no heartbeat yet"); sys.exit(1)
+  at = d.datetime.fromisoformat(json.loads(raw)["at"])
+  if at.tzinfo is None:
+      at = at.replace(tzinfo=d.timezone.utc)
+  age = (d.datetime.now(d.timezone.utc) - at).total_seconds()
+  print(f"{name} heartbeat is {age:.0f}s old")
+  sys.exit(0 if age <= max_age else 1)
+
+services:
+  postgres:
+    image: postgres:16.14-alpine
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-trader}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trader} -d ${POSTGRES_DB:-trader}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy: {resources: {limits: {memory: 1G}}}
+    logging: *default-logging
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    # Persistence stays on: login lockouts and revoked tokens live here.
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    deploy: {resources: {limits: {memory: 256M}}}
+    logging: *default-logging
+
+  # One-shot: brings the schema up to date, then exits 0. Every worker waits
+  # for it (see x-worker-deps). Runs Alembic when revisions exist, otherwise
+  # the create_all bootstrap - see app/db/migrate.py and README "Schema migrations".
+  migrate:
+    <<: *engine-base
+    restart: "no"
+    command: ["python", "-m", "app.db.migrate"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    volumes:
+      - engine-state:/data
+      # so `alembic revision --autogenerate` run through this service lands in the repo
+      - ./trader/engine/alembic/versions:/srv/alembic/versions
+
+  # REST + WebSocket API that the panel talks to
+  api:
+    <<: *engine-base
+    command: ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    depends_on: *worker-deps
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"]
+      interval: 20s
+      timeout: 8s
+      retries: 6
+      start_period: 40s
+    deploy: {resources: {limits: {memory: 1G}}}
+
+  # Market data ingest: websocket klines + REST backfill
+  marketdata:
+    <<: *engine-base
+    command: ["python", "-m", "app.workers.market_data"]
+    depends_on: *worker-deps
+    healthcheck:
+      test: ["CMD", "python", "-c", *heartbeat-check, "marketdata", "120"]
+      interval: 30s
+      timeout: 10s
+      retries: 4
+      start_period: 180s   # backfill of N symbols x 2 timeframes runs before the first heartbeat
+    deploy: {resources: {limits: {memory: 1G}}}
+
+  # The trading loop: signals -> risk -> execution
+  engine:
+    <<: *engine-base
+    command: ["python", "-m", "app.workers.trader"]
+    depends_on: *worker-deps
+    healthcheck:
+      test: ["CMD", "python", "-c", *heartbeat-check, "engine", "120"]
+      interval: 30s
+      timeout: 10s
+      retries: 4
+      start_period: 90s
+    deploy: {resources: {limits: {memory: 2G}}}   # also the service research runs use
+
+  # Periodic jobs: ML retrain, LLM regime review, reconciliation, equity snapshots
+  scheduler:
+    <<: *engine-base
+    command: ["python", "-m", "app.workers.scheduler"]
+    depends_on: *worker-deps
+    healthcheck:
+      test: ["CMD", "python", "-c", *heartbeat-check, "scheduler", "120"]
+      interval: 30s
+      timeout: 10s
+      retries: 4
+      start_period: 90s
+    deploy: {resources: {limits: {memory: 2G}}}   # LightGBM retraining
+
+  # Database backups into ./backups (pg_dump custom format + the trained models).
+  # One dump at start, then every BACKUP_INTERVAL_HOURS; files older than
+  # BACKUP_KEEP_DAYS are deleted. One-off: `docker compose run --rm --no-deps backup once`
+  # (or `.\start.ps1 -Backup` / `./start.sh backup`). Restore: scripts/restore.sh.
+  backup:
+    image: postgres:16.14-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-trader}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-trader}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+    volumes:
+      - ./backups:/backups
+      - engine-state:/data:ro
+      - ./scripts/pg-backup.sh:/usr/local/bin/pg-backup:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/pg-backup"]
+    command: ["loop"]
+    deploy: {resources: {limits: {memory: 256M}}}
+    logging: *default-logging
+
+  panel:
+    build:
+      context: ./trader/panel
+    image: gisoo-trader/panel:latest
+    restart: unless-stopped
+    deploy: {resources: {limits: {memory: 128M}}}
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    ports:
+      # PANEL_BIND: 0.0.0.0 = reachable from the LAN (phones on the same Wi-Fi),
+      # 127.0.0.1 = this computer only. TLS/443 is NOT published here - the VPS
+      # override docker-compose.vps.yml replaces this mapping with 80 + 443.
+      - "${PANEL_BIND:-127.0.0.1}:${PANEL_PORT:-8090}:80"
+    environment:
+      SITE_ADDRESS: ${PUBLIC_SITE_ADDRESS:-:80}
+    volumes:
+      - ./trader/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      api: {condition: service_healthy}
+      panel: {condition: service_healthy}
+    deploy: {resources: {limits: {memory: 256M}}}
+    logging: *default-logging
+
+  # Cloudflare Tunnel: publishes the panel on a hostname with Cloudflare's TLS
+  # without opening any port on the router. Enabled by COMPOSE_PROFILES=tunnel
+  # in .env; the public hostname -> http://caddy:80 mapping lives in the
+  # Cloudflare Zero Trust dashboard (remotely managed tunnel).
+  cloudflared:
+    image: cloudflare/cloudflared:2026.8.3
+    profiles: [tunnel]
+    restart: unless-stopped
+    # Not ":?"-required: that would break every compose command while the
+    # token is unset, even with the profile off. An empty token just makes
+    # this one container exit, which is the right failure.
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN:-}"]
+    depends_on:
+      caddy: {condition: service_started}
+    security_opt: [no-new-privileges:true]
+    deploy: {resources: {limits: {memory: 128M}}}
+    logging: *default-logging
+
+volumes:
+  pgdata:
+  redisdata:
+  engine-state:
+  caddydata:
+  caddyconfig:

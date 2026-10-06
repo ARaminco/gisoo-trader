@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Gisoo Trader">
+  <!--
+    Gisoo Trader app mark. Source of truth for every icon in /public.
+    512 grid, 22.6% corner radius (iOS-style squircle approximation), content
+    kept inside the central 288x288 square so it also sits within the
+    maskable safe zone. Bars: 72 wide, 36 gap, bottom-aligned at y=400.
+    Colours: Gisoo dark tile #0A0B10, Gisoo yellow #FFC700, profit #10b981.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A1C26"/>
+      <stop offset="1" stop-color="#0A0B10"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.07"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+  <rect width="512" height="512" rx="116" fill="url(#sheen)"/>
+  <g id="bars">
+    <rect x="112" y="280" width="72" height="120" rx="28" fill="#FFC700"/>
+    <rect x="220" y="200" width="72" height="200" rx="28" fill="#FFC700"/>
+    <rect x="328" y="112" width="72" height="288" rx="28" fill="#10b981"/>
+  </g>
+</svg>

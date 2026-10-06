@@ -1,0 +1,20 @@
+# VPS override: publish the real HTTP/HTTPS ports so Caddy can obtain a
+# Let's Encrypt certificate (HTTP-01 on :80, redirect :80 -> :443) and serve
+# the panel over TLS, which the PWA needs to install on phones.
+#
+# Activate it by adding these two lines to .env (Compose reads COMPOSE_FILE
+# from .env, so start.sh, the systemd unit and plain `docker compose` commands
+# all pick it up without extra flags):
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.vps.yml
+#   PUBLIC_SITE_ADDRESS=trader.example.com
+#
+# PANEL_BIND / PANEL_PORT are ignored in this mode: the plain-HTTP :8090
+# listener is deliberately gone, so the password never travels in clear text.
+# Open 80/tcp, 443/tcp and 443/udp in the VPS firewall; nothing else.
+services:
+  caddy:
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3

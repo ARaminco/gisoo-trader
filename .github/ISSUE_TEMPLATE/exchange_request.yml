@@ -1,0 +1,33 @@
+name: صرافی تازه (New exchange connector)
+description: پیشنهاد یا داوطلب شدن برای اتصال یک صرافی دیگر.
+title: "[Exchange] "
+labels: ["exchange"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: نام صرافی (Exchange)
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: نشانی مستندات رسمی API (Official API docs URL)
+    validations:
+      required: true
+  - type: checkboxes
+    id: features
+    attributes:
+      label: امکانات API (What the API offers)
+      options:
+        - label: کندل (OHLC) با تایم‌فریم ۴ ساعته (4h candles)
+        - label: سفارش بازار و لیمیت (market and limit orders)
+        - label: سفارش استاپ روی خود صرافی (exchange-side stop orders)
+        - label: کلید فقط-معامله بدون مجوز برداشت (trade-only key without withdrawals)
+        - label: محدود کردن کلید به IP (IP allow-list)
+  - type: checkboxes
+    id: help
+    attributes:
+      label: کمک (Help)
+      options:
+        - label: خودم Pull Request می‌فرستم (I will send a pull request)

@@ -1,0 +1,39 @@
+# Secrets: never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / panel build
+node_modules/
+trader/panel/dist/
+*.tsbuildinfo
+
+# Runtime data written by the stack or the research tools
+backups/
+/data/
+research/data/
+research/results/
+*.pkl
+*.joblib
+*.dump
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local assistant / agent state
+.claude/
+.astack/

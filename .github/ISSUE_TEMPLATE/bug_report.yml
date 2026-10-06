@@ -1,0 +1,59 @@
+name: گزارش اشکال (Bug report)
+description: ربات یا پنل درست کار نمی‌کند یا نتیجهٔ نادرست می‌دهد.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ممنون که گزارش می‌دهید. پیش از ارسال، کلید API، رمز پنل، توکن ربات تلگرام و هر اطلاعات شخصی را از متن حذف کنید.
+        مشکل امنیتی را فقط به dev@netarz.ir بفرستید.
+  - type: dropdown
+    id: exchange
+    attributes:
+      label: صرافی (Exchange)
+      options: [binance, nobitex, wallex, bitpin, ramzinex, okex, paper mode only]
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: حالت (TRADING_MODE)
+      options: [paper, testnet, live]
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: چه اتفاقی افتاد؟ (What happened?)
+      description: متن کامل خطا یا بخش مربوط از لاگ (docker compose logs). کلیدها را پاک کنید.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: انتظار چه چیزی را داشتید؟ (What did you expect?)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: مراحل بازتولید (Steps to reproduce)
+      placeholder: |
+        1. ...
+        2. ...
+  - type: input
+    id: environment
+    attributes:
+      label: محیط اجرا (Environment)
+      placeholder: Ubuntu 24.04 VPS, Docker 27 / Windows 11 Docker Desktop
+    validations:
+      required: true
+  - type: checkboxes
+    id: no_secrets
+    attributes:
+      label: پیش از ارسال
+      options:
+        - label: کلید واقعی، توکن و اطلاعات شخصی را از متن حذف کرده‌ام. (I removed real keys and personal data.)
+          required: true

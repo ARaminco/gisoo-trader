@@ -1,0 +1,13 @@
+# Overlay for research runs. Mounts the source tree so no rebuild is needed
+# and the results directory so analysts can read the output on the host.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.research.yml \
+#       run --rm --no-deps engine python -u -m app.research.run <stage>
+services:
+  engine:
+    volumes:
+      - ./research:/research
+      - ./trader/engine/app:/srv/app:ro
+    environment:
+      RESEARCH_DIR: /research
+      LOG_LEVEL: WARNING
