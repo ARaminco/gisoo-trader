@@ -1,0 +1,59 @@
+# Reverse proxy in front of the API and the panel.
+#
+# SITE_ADDRESS comes from PUBLIC_SITE_ADDRESS in .env:
+#   :80                 local / LAN - plain HTTP on the container's port 80,
+#                       published on the host as PANEL_BIND:PANEL_PORT (docker-compose.yml)
+#   trader.example.com  VPS - automatic HTTPS on :443 (Let's Encrypt, HTTP-01 on :80)
+#                       plus the http -> https redirect on :80. Needs docker-compose.vps.yml
+#                       (COMPOSE_FILE in .env) so that host ports 80 and 443 reach Caddy.
+{
+	admin off
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Behind Cloudflare Tunnel the peer is the cloudflared container, so the
+	# real client address arrives in CF-Connecting-IP. Hand it to the API as the
+	# X-Forwarded-For entry it trusts, or the login lockout would count every
+	# visitor on the internet as one IP. Direct LAN requests keep the default.
+	@viacf header CF-Connecting-IP *
+
+	# API + websocket go to the engine
+	handle /api/* {
+		reverse_proxy @viacf api:8000 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+		reverse_proxy api:8000
+	}
+	handle /ws* {
+		reverse_proxy @viacf api:8000 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+		reverse_proxy api:8000
+	}
+
+	# Everything else is the PWA
+	handle {
+		reverse_proxy panel:80
+	}
+
+	# HSTS only when the site is really served over TLS (never on the local :80 listener)
+	@secure protocol https
+	header @secure Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		# Report-only for now: promote to Content-Security-Policy once the browser console is clean.
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: حساب، اعتبار و کلید نِت اَرز یا گیسو (NetArz / Gisoo account, credit and keys)
+    url: https://netarz.ir/tickets?utm_source=github&utm_medium=referral&utm_campaign=gisoo-trader&utm_content=issue-template
+    about: این‌ها را از پنل نِت اَرز با تیکت بپرسید، نه در Issue عمومی.
+  - name: حساب و کلید صرافی (Exchange account and keys)
+    url: https://github.com/ARaminco/gisoo-trader/blob/main/docs/exchanges.md
+    about: مشکل حساب یا کلید صرافی را از پشتیبانی همان صرافی بپرسید.
+  - name: گزارش مشکل امنیتی (Security issue)
+    url: https://github.com/ARaminco/gisoo-trader/blob/main/SECURITY.md
+    about: مشکل امنیتی را فقط به dev@netarz.ir ایمیل کنید.

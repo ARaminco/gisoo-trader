@@ -1,0 +1,23 @@
+# Keep shell/container/config files LF so the stack runs unchanged on a Linux VPS.
+* text=auto
+*.sh        text eol=lf
+*.py        text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.css       text eol=lf
+*.html      text eol=lf
+*.md        text eol=lf
+*.conf      text eol=lf
+*.txt       text eol=lf
+Dockerfile  text eol=lf
+Caddyfile   text eol=lf
+.env.example text eol=lf
+.gitignore  text eol=lf
+*.ps1       text eol=crlf
+*.png       binary
+*.svg       text eol=lf

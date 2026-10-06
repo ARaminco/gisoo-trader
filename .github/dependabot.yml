@@ -1,0 +1,26 @@
+# Monthly dependency updates.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /trader/engine
+    schedule:
+      interval: monthly
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /trader/panel
+    schedule:
+      interval: monthly
+    groups:
+      panel:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
